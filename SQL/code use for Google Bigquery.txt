@@ -1,0 +1,28 @@
+SELECT base.publication_number as publication_number, -- patent publication number, main patent identifier
+    -- base.family_id as family_id, base.country_code as country_code, -- returns country code (but we are filtering on that later)
+    base.filing_date as filing_date,
+    base.grant_date as grant_date, -- patent filing date (when the applicaiton was submitted), and grant date
+    APPROX_TOP_COUNT(titles.text,1)[OFFSET(0)].value as title, -- this saves the most frequent patent assignee country
+    APPROX_TOP_COUNT(abstract.text,1)[OFFSET(0)].value as abstract, -- this saves the most frequent patent assignee country
+    APPROX_TOP_COUNT(assignee.country_code,1)[OFFSET(0)].value as top_assignee_country, -- this saves the most frequent patent assignee country
+    APPROX_TOP_COUNT(cpc.code,1)[OFFSET(0)].value as top_cpc_code, --  this saves the main CPC class, mainly for cross-checking
+    USPTO_match.patent_id as patent_id, -- USPTO internal patent number
+ 
+FROM patents-public-data.patents.publications as base,
+    UNNEST(cpc) as cpc, -- this makes it possible to filter by CPC patent class
+    UNNEST(assignee_harmonized) as assignee, -- this gives the patent assignee information
+    UNNEST(abstract_localized) as abstract,
+    UNNEST(title_localized) as titles -- unnest title so we can filter on it
+ 
+LEFT JOIN( -- adding USPTO patent number (for future matching with other data)
+    SELECT patent_id, publication_number
+    FROM `patents-public-data.patentsview.match`
+) as USPTO_match on base.publication_number = USPTO_match.publication_number
+ 
+WHERE
+    (cpc.code LIKE "Y02E10/4%" OR cpc.code LIKE "Y02E10/5%" OR cpc.code LIKE "Y02E10/6%" OR cpc.code LIKE "Y02E10/7%" OR cpc.code LIKE "Y02E30/1%") -- Patents related to solar, wind and nuclear energy, see details in https://www.sciencedirect.com/science/article/pii/S0172219016300618
+    AND (assignee.country_code = 'SA') -- restrict to patents that has assignees from Saudi Arabia
+    AND (base.filing_date > 20160000) -- restrict to granted patents after 2016
+    AND (base.filing_date < 20240000) -- restrict to recent
+ 
+GROUP BY base.publication_number, USPTO_match.patent_id, base.filing_date, cpc.code, base.grant_date, titles.text, assignee.country_code
